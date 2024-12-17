@@ -7,7 +7,7 @@
             [muuntaja.core :as m]
             [ring.adapter.jetty :as jetty]
             [ring.util.response :as response]
-            [reitit-app.feature-flags :refer [optional-routes flagged-routes feature-enabled?]]))
+            [reitit-app.feature-flags :refer [optional-routes flagged-routes feature-enabled? feature-flags]]))
 
 ;; In-memory task storage
 (defonce tasks (atom []))
@@ -51,31 +51,40 @@
    {:get
     {:no-doc true
      :swagger {:info {:title "Task Manager API"
-                      :description "Task Management API with Reitit"
+                      :description "Task Management API with Feature Flags"
                       :version "1.0.0"}
                :basePath "/"}
      :handler (swagger/create-swagger-handler)}}])
 
 ;; Base routes that are always enabled
 (def base-routes
-  [["/" {:get list-tasks
-         :swagger {:tags ["tasks"]}}]
-   ["/tasks" {:post create-task
-              :swagger {:tags ["tasks"]}}]])
+  [["/tasks"
+    {:swagger {:tags ["tasks"]}
+     :get {:summary "List all tasks"
+           :handler list-tasks}
+     :post {:summary "Create a new task"
+            :parameters {:body {:task map?}}
+            :handler create-task}}]])
 
 ;; Optional delete routes
 (def delete-routes
   (optional-routes
    #(feature-enabled? :enable-delete)
-   [["/tasks" {:delete delete-task
-               :swagger {:tags ["tasks"]}}]]))
+   [["/tasks"
+     {:swagger {:tags ["tasks"]}
+      :delete {:summary "Delete a task"
+               :parameters {:body {:task map?}}
+               :handler delete-task}}]]))
 
 ;; Optional update routes
 (def update-routes
   (optional-routes
    #(feature-enabled? :enable-update)
-   [["/tasks" {:put update-task
-               :swagger {:tags ["tasks"]}}]]))
+   [["/tasks"
+     {:swagger {:tags ["tasks"]}
+      :put {:summary "Update a task"
+            :parameters {:body {:task map?}}
+            :handler update-task}}]]))
 
 ;; Define the main application with routes and middleware
 (def app
@@ -95,6 +104,22 @@
                          parameters/parameters-middleware
                          muuntaja/format-middleware]}})))
 
+;; Helper functions to toggle feature flags
+(defn enable-all-features! []
+  (reset! (get feature-flags :enable-delete) true)
+  (reset! (get feature-flags :enable-update) true)
+  (println "All features enabled!"))
+
+(defn disable-all-features! []
+  (reset! (get feature-flags :enable-delete) false)
+  (reset! (get feature-flags :enable-update) false)
+  (println "All features disabled!"))
+
+(defn show-feature-status []
+  (println "Current feature status:")
+  (println "Delete feature:" @(get feature-flags :enable-delete))
+  (println "Update feature:" @(get feature-flags :enable-update)))
+
 ;; Function to start the Jetty server
 (defn start-server []
   (jetty/run-jetty #'app {:port 3000 :join? false}))
@@ -102,4 +127,6 @@
 ;; Main entry point of the application
 (defn -main []
   (println "Starting server on port 3000...")
+  (enable-all-features!)  ; Enable all features by default
+  (show-feature-status)
   (start-server))
