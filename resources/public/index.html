@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.10.2/cdn.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.24.0/axios.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div x-data="taskManager()" class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8">Task Manager</h1>
+        
+        <!-- Feature Flags Section -->
+        <div class="mb-8">
+            <h2 class="text-xl font-semibold mb-4">Feature Flags</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <template x-for="(enabled, flag) in featureFlags" :key="flag">
+                    <div class="bg-white p-4 rounded shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 x-text="flag.replace(/-/g, ' ')" class="font-semibold"></h3>
+                            </div>
+                            <button 
+                                @click="toggleFeatureFlag(flag)"
+                                :class="enabled ? 'bg-green-500' : 'bg-gray-300'"
+                                class="px-4 py-2 rounded text-white">
+                                <span x-text="enabled ? 'Enabled' : 'Disabled'"></span>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Tasks Section -->
+        <div class="mb-8">
+            <h2 class="text-xl font-semibold mb-4">Tasks</h2>
+            <!-- Add Task Form -->
+            <form @submit.prevent="createTask" class="bg-white p-4 rounded shadow mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input 
+                        type="text" 
+                        x-model="newTask.name" 
+                        placeholder="Task Name"
+                        class="border p-2 rounded"
+                        required>
+                    <template x-if="featureFlags['enable-task-priority']">
+                        <select 
+                            x-model="newTask.priority"
+                            class="border p-2 rounded">
+                            <option value="low">Low Priority</option>
+                            <option value="medium">Medium Priority</option>
+                            <option value="high">High Priority</option>
+                        </select>
+                    </template>
+                    <template x-if="featureFlags['enable-task-categories']">
+                        <input 
+                            type="text" 
+                            x-model="newTask.category" 
+                            placeholder="Category"
+                            class="border p-2 rounded">
+                    </template>
+                    <template x-if="featureFlags['enable-task-due-date']">
+                        <input 
+                            type="date" 
+                            x-model="newTask.dueDate" 
+                            class="border p-2 rounded">
+                    </template>
+                </div>
+                <button type="submit" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded">
+                    Add Task
+                </button>
+            </form>
+
+            <!-- Tasks List -->
+            <div class="grid grid-cols-1 gap-4">
+                <template x-for="task in tasks" :key="task.name">
+                    <div class="bg-white p-4 rounded shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 x-text="task.name" class="font-semibold"></h3>
+                                <template x-if="featureFlags['enable-task-priority']">
+                                    <span 
+                                        x-text="'Priority: ' + task.priority"
+                                        :class="{
+                                            'text-red-500': task.priority === 'high',
+                                            'text-yellow-500': task.priority === 'medium',
+                                            'text-green-500': task.priority === 'low'
+                                        }"
+                                        class="text-sm mr-2"></span>
+                                </template>
+                                <template x-if="featureFlags['enable-task-categories']">
+                                    <span 
+                                        x-text="'Category: ' + task.category"
+                                        class="text-sm text-gray-500 mr-2"></span>
+                                </template>
+                                <template x-if="featureFlags['enable-task-due-date']">
+                                    <span 
+                                        x-text="'Due: ' + task.dueDate"
+                                        class="text-sm text-gray-500"></span>
+                                </template>
+                            </div>
+                            <button 
+                                @click="deleteTask(task)"
+                                class="bg-red-500 text-white px-3 py-1 rounded">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function taskManager() {
+            return {
+                tasks: [],
+                featureFlags: {},
+                newTask: {
+                    name: '',
+                    priority: 'low',
+                    category: '',
+                    dueDate: ''
+                },
+
+                init() {
+                    this.loadTasks()
+                    this.loadFeatureFlags()
+                },
+
+                async loadTasks() {
+                    try {
+                        const response = await axios.get('/api/')
+                        this.tasks = response.data
+                        console.log('Loaded tasks:', this.tasks) // Debug log
+                    } catch (error) {
+                        console.error('Error loading tasks:', error)
+                    }
+                },
+
+                async loadFeatureFlags() {
+                    try {
+                        const response = await axios.get('/api/features')
+                        this.featureFlags = response.data
+                        console.log('Loaded feature flags:', this.featureFlags) // Debug log
+                    } catch (error) {
+                        console.error('Error loading feature flags:', error)
+                    }
+                },
+
+                async createTask() {
+                    try {
+                        const taskData = { 
+                            task: { 
+                                name: this.newTask.name,
+                                ...(this.featureFlags['enable-task-priority'] && { priority: this.newTask.priority }),
+                                ...(this.featureFlags['enable-task-categories'] && { category: this.newTask.category }),
+                                ...(this.featureFlags['enable-task-due-date'] && { dueDate: this.newTask.dueDate })
+                            }
+                        }
+
+                        console.log('Creating task with data:', taskData) // Debug log
+                        await axios.post('/api/tasks', taskData)
+                        
+                        // Reset form
+                        this.newTask = {
+                            name: '',
+                            priority: 'low',
+                            category: '',
+                            dueDate: ''
+                        }
+                        
+                        // Reload tasks after creation
+                        await this.loadTasks()
+                    } catch (error) {
+                        console.error('Error creating task:', error)
+                    }
+                },
+
+                async deleteTask(task) {
+                    try {
+                        await axios.delete('/api/tasks', { data: { task } })
+                        await this.loadTasks()
+                    } catch (error) {
+                        console.error('Error deleting task:', error)
+                    }
+                },
+
+                async toggleFeatureFlag(flag) {
+                    try {
+                        console.log('Toggling feature flag:', flag) // Debug log
+                        await axios.post(`/api/features/${flag}`)
+                        await this.loadFeatureFlags()
+                    } catch (error) {
+                        console.error('Error toggling feature flag:', error)
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
