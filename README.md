@@ -1,6 +1,17 @@
 # reitit-app
 
-This is a simple Clojure web application using the `reitit` library for routing.
+A Clojure web application using reitit for routing, featuring task management with feature flags.
+
+## Features
+
+- Task management (create, list, delete)
+- Feature flag system for toggling functionality
+- Interactive UI with Alpine.js
+- API documentation with Swagger UI
+- Optional task fields controlled by feature flags:
+  - Task priorities
+  - Task categories
+  - Due dates
 
 ## Prerequisites
 
@@ -32,7 +43,11 @@ To run the application, use:
 lein run
 ```
 
-The app will start on http://localhost:3000.
+Access the application:
+
+UI: http://localhost:3000
+API Documentation: http://localhost:3000/swagger
+API Endpoints: http://localhost:3000/api/
 
 ## Project Structure
 
@@ -42,13 +57,31 @@ reitit-project/
 │   └── reitit-app/
 │       ├── core.clj        
 ├── resources/
+│   └── public/
+│       ├── index.html
 └── project.clj             
 ```
 
-## License
+## API Endpoints
 
-Copyright © 2024 FIXME
+- GET /api/ - List all tasks
+- POST /api/tasks - Create a new task
+- DELETE /api/tasks - Delete a task
+- GET /api/features - List feature flags
+- POST /api/features/:feature-key - Toggle feature flag
 
-This program and the accompanying materials are made available under the terms of the Eclipse Public License 2.0 which is available at http://www.eclipse.org/legal/epl-2.0.
+## Technologies Used
 
-This Source Code may also be made available under the following Secondary Licenses when the conditions for such availability set forth in the Eclipse Public License, v. 2.0 are satisfied: GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version, with the GNU Classpath Exception which is available at https://www.gnu.org/software/classpath/license.html.
+Backend:
+
+- Reitit (routing)
+- Ring (web server)
+- Swagger (API documentation)
+
+
+Frontend:
+
+- Alpine.js (interactivity)
+- Tailwind CSS (styling)
+- Axios (API communication)
+
