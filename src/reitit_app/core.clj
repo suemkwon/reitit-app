@@ -7,43 +7,63 @@
             [muuntaja.core :as m]
             [ring.adapter.jetty :as jetty]
             [ring.util.response :as response]
-            [reitit-app.feature-flags :refer [optional-routes flagged-routes feature-enabled? feature-flags]]))
+            [ring.middleware.resource :as resource]
+            [ring.middleware.cors :refer [wrap-cors]]))
 
-;; In-memory task storage
+;; In-memory storage
 (defonce tasks (atom []))
+(defonce feature-flags (atom {:enable-task-categories false
+                              :enable-task-priority true
+                              :enable-task-due-date false}))
 
-;; Route handlers
+;; Feature flag functions
+(defn feature-enabled? [feature-key]
+  (get @feature-flags feature-key false))
+
+(defn toggle-feature! [feature-key]
+  (swap! feature-flags update feature-key not)
+  (get @feature-flags feature-key))
+
+(defn list-features []
+  @feature-flags)
+
+;; Task management functions
 (defn list-tasks [_]
   {:status 200
-   :body @tasks
-   :swagger {:responses {200 {:description "Successfully retrieved tasks"
-                              :schema [:vector map?]}}}})
+   :body @tasks})
 
 (defn create-task [req]
-  (let [task (get-in req [:body-params :task])]
+  (let [base-task (get-in req [:body-params :task])
+        task (merge
+              base-task
+              (when (feature-enabled? :enable-task-priority)
+                {:priority (get-in req [:body-params :priority] "medium")})
+              (when (feature-enabled? :enable-task-categories)
+                {:category (get-in req [:body-params :category] "general")})
+              (when (feature-enabled? :enable-task-due-date)
+                {:due-date (get-in req [:body-params :due-date])}))]
     (swap! tasks conj task)
     {:status 201
-     :body task
-     :swagger {:responses {201 {:description "Task created successfully"
-                                :schema map?}}
-               :parameters {:body-params {:task map?}}}}))
+     :body task}))
 
 (defn delete-task [req]
   (let [task-to-delete (get-in req [:body-params :task])]
     (swap! tasks (fn [current-tasks]
                    (remove #(= % task-to-delete) current-tasks)))
     {:status 200
-     :body "Task deleted"
-     :swagger {:responses {200 {:description "Task deleted successfully"}}
-               :parameters {:body-params {:task map?}}}}))
+     :body "Task deleted"}))
 
-(defn update-task [req]
-  (let [task-to-update (get-in req [:body-params :task])]
+;; Feature flag endpoints
+(defn list-feature-flags [_]
+  {:status 200
+   :body @feature-flags})
+
+(defn toggle-feature [req]
+  (let [feature-key (keyword (get-in req [:path-params :feature-key]))
+        new-state (toggle-feature! feature-key)]
     {:status 200
-     :body task-to-update
-     :swagger {:responses {200 {:description "Task updated successfully"
-                                :schema map?}}
-               :parameters {:body-params {:task map?}}}}))
+     :body {:feature feature-key
+            :enabled new-state}}))
 
 ;; Swagger documentation routes
 (def swagger-routes
@@ -53,80 +73,51 @@
      :swagger {:info {:title "Task Manager API"
                       :description "Task Management API with Feature Flags"
                       :version "1.0.0"}
-               :basePath "/"}
-     :handler (swagger/create-swagger-handler)}}])
+               :basePath "/"}}
+    :handler (swagger/create-swagger-handler)}])
 
-;; Base routes that are always enabled
-(def base-routes
-  [["/tasks"
-    {:swagger {:tags ["tasks"]}
-     :get {:summary "List all tasks"
-           :handler list-tasks}
-     :post {:summary "Create a new task"
-            :parameters {:body {:task map?}}
-            :handler create-task}}]])
-
-;; Optional delete routes
-(def delete-routes
-  (optional-routes
-   #(feature-enabled? :enable-delete)
-   [["/tasks"
-     {:swagger {:tags ["tasks"]}
-      :delete {:summary "Delete a task"
-               :parameters {:body {:task map?}}
-               :handler delete-task}}]]))
-
-;; Optional update routes
-(def update-routes
-  (optional-routes
-   #(feature-enabled? :enable-update)
-   [["/tasks"
-     {:swagger {:tags ["tasks"]}
-      :put {:summary "Update a task"
-            :parameters {:body {:task map?}}
-            :handler update-task}}]]))
-
-;; Define the main application with routes and middleware
+;; Main application routes
 (def app
-  (ring/ring-handler
-   (ring/router
-    (concat
-     [swagger-routes
-      ["/swagger/*" {:get (swagger-ui/create-swagger-ui-handler
-                           {:url "/swagger.json"
-                            :config {:validator-url nil}})}]]
-     (flagged-routes
-      base-routes
-      delete-routes
-      update-routes))
-    {:data {:muuntaja m/instance
-            :middleware [swagger/swagger-feature
-                         parameters/parameters-middleware
-                         muuntaja/format-middleware]}})))
+  (-> (ring/ring-handler
+       (ring/router
+        [;; API routes
+         ["/api"
+          ["/" {:get list-tasks}]
+          ["/tasks" {:post create-task
+                     :delete delete-task}]
+          ["/features"
+           ["" {:get list-feature-flags}]
+           ["/:feature-key" {:post toggle-feature}]]]
 
-;; Helper functions to toggle feature flags
-(defn enable-all-features! []
-  (reset! (get feature-flags :enable-delete) true)
-  (reset! (get feature-flags :enable-update) true)
-  (println "All features enabled!"))
+         ;; Swagger routes
+         swagger-routes
 
-(defn disable-all-features! []
-  (reset! (get feature-flags :enable-delete) false)
-  (reset! (get feature-flags :enable-update) false)
-  (println "All features disabled!"))
+         ["/swagger/*" {:get (swagger-ui/create-swagger-ui-handler
+                              {:url "/swagger.json"
+                               :config {:validator-url nil}})}]
 
-(defn show-feature-status []
-  (println "Current feature status:")
-  (println "Delete feature:" @(get feature-flags :enable-delete))
-  (println "Update feature:" @(get feature-flags :enable-update)))
+         ;; UI route
+         ["/" {:get (fn [_] (response/resource-response "index.html" {:root "public"}))}]]
 
-;; Function to start the Jetty server
+        {:data {:muuntaja m/instance
+                :middleware [parameters/parameters-middleware
+                             muuntaja/format-middleware
+                             swagger/swagger-feature]}})
+
+       (ring/create-default-handler))
+
+      ;; Add CORS middleware
+      (wrap-cors :access-control-allow-origin [#".*"]
+                 :access-control-allow-methods [:get :post :put :delete]
+                 :access-control-allow-headers ["Content-Type"])
+
+      ;; Add resource middleware for serving static files
+      (resource/wrap-resource "public")))
+
+;; Server startup
 (defn start-server []
   (jetty/run-jetty #'app {:port 3000 :join? false}))
 
-;; Main entry point of the application
 (defn -main []
   (println "Starting server on port 3000...")
-  (enable-all-features!)  ; Enable all features by default
-  (show-feature-status)
   (start-server))

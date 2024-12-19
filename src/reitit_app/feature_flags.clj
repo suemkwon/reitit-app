@@ -1,22 +1,24 @@
 (ns reitit-app.feature-flags)
 
-(defn optional-routes
-  "Takes a predicate function and routes. Returns the routes if predicate returns true, nil otherwise."
-  [pred routes]
-  (when (pred)
-    routes))
+;; Store feature flags in an atom
+(defonce feature-flags (atom {:enable-task-categories false
+                             :enable-task-priority true
+                             :enable-task-due-date false}))
 
-(defn flagged-routes
-  "Combines multiple route definitions, filtering out nil values."
-  [& routes]
-  (vec (remove nil? (flatten routes))))
+(defn feature-enabled? [feature-key]
+  (get @feature-flags feature-key false))
 
-;; Example feature flag predicates
-(def feature-flags
-  {:enable-delete (atom true)
-   :enable-update (atom false)})
+(defn toggle-feature! [feature-key]
+  (swap! feature-flags update feature-key not)
+  (get @feature-flags feature-key))
 
-(defn feature-enabled? [flag-key]
-  (if-let [flag-atom (get feature-flags flag-key)]
-    @flag-atom
-    false))
+(defn list-features []
+  @feature-flags)
+
+;; Feature flag middleware
+(defn wrap-feature-check [handler feature-key]
+  (fn [request]
+    (if (feature-enabled? feature-key)
+      (handler request)
+      {:status 403
+       :body {:error (str "Feature " feature-key " is not enabled")}})))
