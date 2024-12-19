@@ -1,4 +1,4 @@
-# reitit-app
+# Task Manager API with Reitit, Feature Flags, and UI
 
 A Clojure web application using reitit for routing, featuring task management with feature flags.
 
